@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mood-calendar-shell-v3';
+const CACHE_NAME = 'mood-calendar-shell-v4';
 const APP_SHELL = ['./', './manifest.webmanifest', './app-icon.svg', './app-icon-192.png', './app-icon-512.png'];
 
 self.addEventListener('install', (event) => {

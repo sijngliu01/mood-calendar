@@ -1,5 +1,5 @@
-import { Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { Download, Plus, Trash2, Upload } from 'lucide-react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { toast } from 'sonner';
 import MoodIcon from '@/components/MoodIcon';
 import { EMOJI_OPTIONS } from '@/data/icons';
@@ -13,6 +13,7 @@ export default function SettingsPage() {
   const {
     aggregation, setAggregation, tags, addTag, updateTag, deleteTag,
     categories, addCategory, updateCategory, deleteCategory, clearRecords, records,
+    createBackup, restoreBackup,
   } = useMood();
   const initialCategory = categories[0];
   const [selectedCategoryId, setSelectedCategoryId] = useState(initialCategory?.id || '');
@@ -21,6 +22,9 @@ export default function SettingsPage() {
   const [categoryIcon, setCategoryIcon] = useState(initialCategory?.icon || 'smile');
   const [selectedTagId, setSelectedTagId] = useState('');
   const [tagName, setTagName] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const selectCategory = (category: typeof initialCategory) => {
     if (!category) return;
@@ -81,6 +85,56 @@ export default function SettingsPage() {
     await clearRecords();
     toast.success('全部记录已清空');
   };
+  const exportData = async () => {
+    setIsExporting(true);
+    try {
+      const blob = await createBackup();
+      const date = new Date().toISOString().slice(0, 10);
+      const file = new File([blob], `心情日历备份-${date}.json`, { type: 'application/json' });
+      let shared = false;
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: '心情日历备份' });
+          shared = true;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+        }
+      }
+      if (!shared) {
+        const url = URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      toast.success(`备份已生成，包含 ${records.length} 条记录`);
+    } catch {
+      toast.error('导出失败，请检查浏览器存储空间');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  const importData = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!window.confirm(`导入会覆盖当前 ${records.length} 条记录及全部设置。格式错误时不会改动现有数据，是否继续？`)) return;
+    setIsImporting(true);
+    try {
+      const result = await restoreBackup(file);
+      setSelectedCategoryId('');
+      setCategoryName('');
+      setSelectedTagId('');
+      setTagName('');
+      const imageNotice = result.missingImages ? `，${result.missingImages} 张缺失图片已跳过` : '';
+      toast.success(`已恢复 ${result.records} 条记录和 ${result.images} 张图片${imageNotice}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '导入失败，请检查备份文件');
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   return <main className="mx-auto min-h-screen w-full max-w-3xl px-5 pb-36 pt-9 sm:px-8">
     <header className="mb-8"><p className="mb-2 text-sm text-muted-foreground">偏好与管理</p><h1 className="text-4xl font-semibold">设置</h1></header>
@@ -98,6 +152,15 @@ export default function SettingsPage() {
       <div className="mt-4 flex gap-2"><Input value={tagName} onChange={(event) => setTagName(event.target.value)} placeholder="标签名称" />{selectedTagId && <Button type="button" variant="destructive" size="icon" title="删除标签" onClick={removeTag}><Trash2 size={16} /></Button>}<Button type="button" onClick={saveTag}>保存</Button></div>
     </section>
 
-    <section className="border-t py-7"><h2 className="text-lg font-semibold">数据管理</h2><p className="mt-1 text-sm text-muted-foreground">当前共有 {records.length} 条记录，数据仅保存在此浏览器。</p><Button type="button" variant="destructive" className="mt-4" onClick={clear}>清空全部记录</Button></section>
+    <section className="border-t py-7">
+      <h2 className="text-lg font-semibold">数据管理</h2>
+      <p className="mt-1 text-sm text-muted-foreground">当前共有 {records.length} 条记录。备份包含记录、图片、标签和心情设置。</p>
+      <input ref={importInputRef} type="file" accept=".json,application/json" className="hidden" onChange={importData} />
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Button type="button" variant="secondary" disabled={isExporting || isImporting} onClick={exportData}><Download size={16} />{isExporting ? '正在导出' : '导出备份'}</Button>
+        <Button type="button" variant="secondary" disabled={isExporting || isImporting} onClick={() => importInputRef.current?.click()}><Upload size={16} />{isImporting ? '正在导入' : '导入备份'}</Button>
+      </div>
+      <Button type="button" variant="destructive" className="mt-4" onClick={clear}>清空全部记录</Button>
+    </section>
   </main>;
 }

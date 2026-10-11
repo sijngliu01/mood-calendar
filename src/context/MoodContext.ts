@@ -22,6 +22,8 @@ export interface IMoodContextValue {
   deleteCategory: (categoryId: string) => boolean;
   setAggregation: (mode: AggregationMode) => void;
   clearRecords: () => Promise<void>;
+  createBackup: () => Promise<Blob>;
+  restoreBackup: (file: File) => Promise<{ records: number; images: number; missingImages: number }>;
 }
 
 export const MoodContext = createContext<IMoodContextValue | null>(null);

@@ -64,6 +64,17 @@ export async function getImageUrl(id: string) {
   return blob ? URL.createObjectURL(blob) : null;
 }
 
+export async function getImages(ids: string[]) {
+  const uniqueIds = [...new Set(ids)];
+  if (!uniqueIds.length) return new Map<string, Blob>();
+  const database = await openDatabase();
+  const transaction = database.transaction(IMAGE_STORE, 'readonly');
+  const store = transaction.objectStore(IMAGE_STORE);
+  const blobs = await Promise.all(uniqueIds.map((id) => requestResult<Blob | undefined>(store.get(id))));
+  database.close();
+  return new Map(uniqueIds.flatMap((id, index) => blobs[index] ? [[id, blobs[index]]] : []));
+}
+
 export async function deleteImages(ids: string[]) {
   if (!ids.length) return;
   const database = await openDatabase();
@@ -79,4 +90,22 @@ export async function deleteImages(ids: string[]) {
 export async function dataUrlToBlob(value: string) {
   const response = await fetch(value);
   return response.blob();
+}
+
+export async function replaceDatabaseData(state: Record<string, unknown>, images: Map<string, Blob>) {
+  const database = await openDatabase();
+  const transaction = database.transaction([STATE_STORE, IMAGE_STORE], 'readwrite');
+  const stateStore = transaction.objectStore(STATE_STORE);
+  const imageStore = transaction.objectStore(IMAGE_STORE);
+
+  imageStore.clear();
+  images.forEach((blob, id) => imageStore.put(blob, id));
+  Object.entries(state).forEach(([key, value]) => stateStore.put(value, key));
+
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+  database.close();
 }

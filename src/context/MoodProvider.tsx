@@ -9,6 +9,7 @@ import {
   type IMoodRecord,
   type ITag,
 } from '@/data/mood';
+import { createBackup as createBackupFile, restoreBackup as restoreBackupFile } from '@/lib/backup';
 import { dataUrlToBlob, deleteImages, getImageUrl, getState, saveImage, setState } from '@/lib/db';
 import { store as legacyStore } from '@/lib/storage';
 
@@ -185,6 +186,23 @@ export default function MoodProvider({ children }: MoodProviderProps) {
     await setState('records', []);
   };
 
+  const createBackup = () => createBackupFile({ records, tags, categories, aggregation });
+
+  const restoreBackup = async (file: File) => {
+    const restored = await restoreBackupFile(file);
+    const hydratedRecords = await Promise.all(restored.records.map(hydrateRecord));
+    records.forEach((record) => record.imageUrls?.forEach(URL.revokeObjectURL));
+    setRecords(hydratedRecords);
+    setTags(restored.tags);
+    setCategories(restored.categories);
+    setAggregationState(restored.aggregation);
+    return {
+      records: restored.records.length,
+      images: restored.restoredImages,
+      missingImages: restored.missingImages,
+    };
+  };
+
   return <MoodContext.Provider value={{
     isReady,
     records,
@@ -201,5 +219,7 @@ export default function MoodProvider({ children }: MoodProviderProps) {
     deleteCategory,
     setAggregation,
     clearRecords,
+    createBackup,
+    restoreBackup,
   }}>{children}</MoodContext.Provider>;
 }
